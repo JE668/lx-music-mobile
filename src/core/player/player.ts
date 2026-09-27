@@ -126,6 +126,9 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
 
     if (err.message == requestMsg.tooManyRequests) return delayRetry(musicInfo, isRefresh)
 
+    // 音质不可用（跳过策略）：不重试，直接跳过
+    if ((err as any).isQualitySkip) throw err
+
     if (!isRetryed) return getMusicPlayUrl(musicInfo, isRefresh, true)
 
     throw err

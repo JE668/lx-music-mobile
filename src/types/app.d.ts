@@ -35,6 +35,8 @@ interface GlobalData {
   playerTrackId: string
 
   qualityList: LX.QualityList
+  /** 当前实际播放的音质（由 URL 解析时写入） */
+  currentPlayQuality: LX.Quality | null
   apis: Partial<LX.UserApi.UserApiSources>
   apiInitPromise: [Promise<boolean>, boolean, (success: boolean) => void]
 

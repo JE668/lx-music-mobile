@@ -3,7 +3,7 @@
 declare namespace LX {
   type OnlineSource = 'kw' | 'kg' | 'tx' | 'wy' | 'mg'
   type Source = OnlineSource | 'local'
-  type Quality = '128k' | '320k' | 'flac' | 'flac24bit' | '192k' | 'ape' | 'wav'
+  type Quality = 'master' | 'atmos_plus' | 'atmos' | 'hires' | 'flac24bit' | 'flac' | 'ape' | 'wav' | '320k' | '192k' | '128k'
   type QualityList = Partial<Record<LX.Source, LX.Quality[]>>
 
   type ShareType = 'system' | 'clipboard'

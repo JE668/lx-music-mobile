@@ -52,6 +52,7 @@ global.lx = {
   gettingUrlId: '',
 
   qualityList: {},
+  currentPlayQuality: null,
   apis: {},
   apiInitPromise: [Promise.resolve(false), true, () => {}],
 

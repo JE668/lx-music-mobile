@@ -2,6 +2,20 @@ import { isActive } from '@/utils/tools'
 import { useEffect, useState } from 'react'
 import state, { type InitState } from './state'
 
+export const useCurrentPlayQuality = () => {
+  const [value, update] = useState(global.lx.currentPlayQuality)
+
+  useEffect(() => {
+    const handler = (quality: LX.Quality | null) => update(quality)
+    global.state_event.on('currentPlayQualityChanged', handler)
+    return () => {
+      global.state_event.off('currentPlayQualityChanged', handler)
+    }
+  }, [])
+
+  return value
+}
+
 export const usePlayerMusicInfo = () => {
   const [value, update] = useState(state.musicInfo)
 

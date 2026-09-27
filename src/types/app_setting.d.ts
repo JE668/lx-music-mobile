@@ -127,6 +127,38 @@ declare global {
       'player.playQuality': LX.Quality
 
       /**
+       * 音质后备方案
+       * same_source_higher: 同音源内先尝试更高音质，再尝试其他平台同音质
+       * all_sources_higher: 所有源尝试同或更高音质，不降级
+       * best: 先尝试所有源的同音质，全部不可用时再降级
+       * downgrade: 所选音质不可用时直接降级到下一可用音质
+       * strict: 仅尝试所选音质，不可用则报错
+       */
+      'player.qualityFallback': 'same_source_higher' | 'all_sources_higher' | 'best' | 'downgrade' | 'strict'
+
+      /**
+       * 策略失败后是否允许降级到更低音质
+       * true: 降级到更低音质
+       * false: 跳过歌曲
+       */
+      'player.qualityAllowDowngrade': boolean
+
+      /**
+       * 是否在播放栏显示当前实际播放音质
+       */
+      'player.showQualityBadge': boolean
+
+      /**
+       * 按歌曲覆盖音质 JSON 字符串 { songId: Quality }
+       */
+      'player.qualityOverrides': string
+
+      /**
+       * 是否启用车机模式（深色主题 + 高对比度 + 大触控目标）
+       */
+      'common.carMode': boolean
+
+      /**
        * 启动软件时是否恢复上次播放进度
        */
       'player.isSavePlayTime': boolean

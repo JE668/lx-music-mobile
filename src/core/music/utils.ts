@@ -7,6 +7,7 @@ import {
 } from '@/utils/data'
 import { langS2T, toNewMusicInfo, toOldMusicInfo } from '@/utils'
 import { assertApiSupport } from '@/utils/tools'
+import { updateSetting } from '@/core/common'
 import settingState from '@/store/setting/state'
 import { requestMsg } from '@/utils/message'
 import BackgroundTimer from 'react-native-background-timer'
@@ -213,20 +214,111 @@ export const getOnlineOtherSourcePicByLocal = async(musicInfo: LX.Music.MusicInf
   })
 }
 
-export const TRY_QUALITYS_LIST = ['flac24bit', 'flac', '320k'] as const
-type TryQualityType = typeof TRY_QUALITYS_LIST[number]
-export const getPlayQuality = (highQuality: LX.Quality, musicInfo: LX.Music.MusicInfoOnline): LX.Quality => {
-  let type: LX.Quality = '128k'
-  if (TRY_QUALITYS_LIST.includes(highQuality as TryQualityType)) {
-    let list = global.lx.qualityList[musicInfo.source]
+/**
+ * 完整音质排序（从高到低）
+ * master > atmos_plus > atmos > hires > flac24bit > flac > ape > wav > 320k > 192k > 128k
+ */
+export const QUALITY_ORDER: readonly LX.Quality[] = [
+  'master', 'atmos_plus', 'atmos', 'hires',
+  'flac24bit', 'flac', 'ape', 'wav',
+  '320k', '192k', '128k',
+]
 
-    let t = TRY_QUALITYS_LIST
-      .slice(TRY_QUALITYS_LIST.indexOf(highQuality as TryQualityType))
-      .find(q => musicInfo.meta._qualitys[q] && list?.includes(q))
+/**
+ * 获取歌曲在当前源上可用的音质列表（歌曲有 & 源支持）
+ */
+export const getAvailableQualities = (musicInfo: LX.Music.MusicInfoOnline): LX.Quality[] => {
+  const sourceQualitys = global.lx.qualityList[musicInfo.source] ?? []
+  return QUALITY_ORDER.filter(q => musicInfo.meta._qualitys[q] && sourceQualitys.includes(q))
+}
 
-    if (t) type = t
+/**
+ * 获取下一个更低音质（用于降级重试）
+ * 返回 null 表示已无更低音质
+ */
+export const getNextLowerQuality = (current: LX.Quality): LX.Quality | null => {
+  const idx = QUALITY_ORDER.indexOf(current)
+  if (idx < 0 || idx >= QUALITY_ORDER.length - 1) return null
+  return QUALITY_ORDER[idx + 1]
+}
+
+/**
+ * 获取当前音质之上（含自身）的所有可用音质，从高到低
+ * 用于「同或更高音质」策略
+ */
+export const getQualitiesAtOrAbove = (musicInfo: LX.Music.MusicInfoOnline, target: LX.Quality): LX.Quality[] => {
+  const targetIdx = QUALITY_ORDER.indexOf(target)
+  if (targetIdx < 0) return []
+  const available = getAvailableQualities(musicInfo)
+  // 从 targetIdx 开始向上（index 更小 = 更高音质）
+  const result: LX.Quality[] = []
+  for (let i = targetIdx; i >= 0; i--) {
+    if (available.includes(QUALITY_ORDER[i])) result.push(QUALITY_ORDER[i])
   }
-  return type
+  return result
+}
+
+/**
+ * 获取当前音质以下（不含自身）的所有可用音质，从高到低
+ * 用于降级策略
+ */
+export const getQualitiesBelow = (musicInfo: LX.Music.MusicInfoOnline, target: LX.Quality): LX.Quality[] => {
+  const targetIdx = QUALITY_ORDER.indexOf(target)
+  if (targetIdx < 0 || targetIdx >= QUALITY_ORDER.length - 1) return []
+  const available = getAvailableQualities(musicInfo)
+  const result: LX.Quality[] = []
+  for (let i = targetIdx + 1; i < QUALITY_ORDER.length; i++) {
+    if (available.includes(QUALITY_ORDER[i])) result.push(QUALITY_ORDER[i])
+  }
+  return result
+}
+
+/**
+ * 读取按曲覆盖音质表
+ */
+export const getQualityOverrides = (): Record<string, LX.Quality> => {
+  try {
+    const raw = settingState.setting['player.qualityOverrides']
+    return raw && raw !== '{}' ? JSON.parse(raw) : {}
+  } catch { return {} }
+}
+
+/**
+ * 设置某首歌的音质覆盖（传 null 表示移除覆盖）
+ */
+export const setQualityOverride = (songId: string, quality: LX.Quality | null) => {
+  const overrides = getQualityOverrides()
+  if (quality) overrides[songId] = quality
+  else delete overrides[songId]
+  updateSetting({ 'player.qualityOverrides': JSON.stringify(overrides) })
+}
+
+/**
+ * 获取播放音质
+ * 策略：精确匹配 → 向下降级 → 向上升级 → 兜底 128k
+ * 支持按歌曲覆盖音质（player.qualityOverrides，JSON 字符串存储）
+ */
+export const getPlayQuality = (highQuality: LX.Quality, musicInfo: LX.Music.MusicInfoOnline): LX.Quality => {
+  const overrides = getQualityOverrides()
+  const target = overrides[musicInfo.id] ?? highQuality
+  const available = getAvailableQualities(musicInfo)
+
+  // 精确匹配
+  if (available.includes(target)) return target
+
+  const targetIdx = QUALITY_ORDER.indexOf(target)
+
+  // 向下降级（优先）
+  for (let i = targetIdx + 1; i < QUALITY_ORDER.length; i++) {
+    if (available.includes(QUALITY_ORDER[i])) return QUALITY_ORDER[i]
+  }
+
+  // 向上升级（次选）
+  for (let i = targetIdx - 1; i >= 0; i--) {
+    if (available.includes(QUALITY_ORDER[i])) return QUALITY_ORDER[i]
+  }
+
+  return '128k'
 }
 
 export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggleSource, isRefresh, retryedSource = [] }: {
@@ -282,6 +374,12 @@ export const getOnlineOtherSourceMusicUrl = async({ musicInfos, quality, onToggl
 
 /**
  * 获取在线音乐URL
+ * 音质后备策略：
+ *   same_source_higher - 同音源先升档 → 换源同音质 → (降级/跳过)
+ *   all_sources_higher - 所有源同或更高音质 → (降级/跳过)
+ *   best               - 所有源同音质 → 降级（默认）
+ *   downgrade          - 直接降级到下一可用音质
+ *   strict             - 仅尝试所选音质，不可用则报错
  */
 export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSource, isRefresh, allowToggleSource }: {
   musicInfo: LX.Music.MusicInfoOnline
@@ -296,35 +394,167 @@ export const handleGetOnlineMusicUrl = async({ musicInfo, quality, onToggleSourc
   isFromCache: boolean
 }> => {
   if (!await global.lx.apiInitPromise[0]) throw new Error('source init failed')
-  // console.log(musicInfo.source)
+
+  const fallbackMode = settingState.setting['player.qualityFallback']
+  const allowDowngrade = settingState.setting['player.qualityAllowDowngrade']
   const targetQuality = quality ?? getPlayQuality(settingState.setting['player.playQuality'], musicInfo)
 
-  let reqPromise
-  try {
-    reqPromise = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), targetQuality).promise
-  } catch (err: any) {
-    reqPromise = Promise.reject(err)
+  const tryQuality = (q: LX.Quality) => {
+    let reqPromise
+    try {
+      reqPromise = musicSdk[musicInfo.source].getMusicUrl(toOldMusicInfo(musicInfo), q).promise
+    } catch (err: any) {
+      reqPromise = Promise.reject(err)
+    }
+    return reqPromise.then(({ url, type }: { url: string, type: LX.Quality }) => ({
+      musicInfo, url, quality: type, isFromCache: false,
+    }))
   }
-  return reqPromise.then(({ url, type }: { url: string, type: LX.Quality }) => {
-    return { musicInfo, url, quality: type, isFromCache: false }
-  }).catch(async(err: any) => {
-    console.log(err)
+
+  // 降级重试（当策略失败且允许降级时）
+  const tryDowngrade = (): Promise<ReturnType<typeof handleGetOnlineMusicUrl>> | null => {
+    const nextQuality = getNextLowerQuality(targetQuality)
+    if (nextQuality) {
+      console.log('[quality] final downgrade', targetQuality, '->', nextQuality)
+      return handleGetOnlineMusicUrl({ musicInfo, quality: nextQuality, isRefresh, allowToggleSource, onToggleSource })
+    }
+    return null
+  }
+
+  // 跳过歌曲（当策略失败且不允许降级时）
+  const skipSong = (): never => {
+    const e = new Error(global.i18n.t('setting_play_quality_not_available'))
+    ;(e as any).isQualitySkip = true
+    throw e
+  }
+
+  return tryQuality(targetQuality).catch(async(err: any) => {
+    console.log('[quality] failed at', targetQuality, '->', err.message)
     if (!allowToggleSource || err.message == requestMsg.tooManyRequests) throw err
-    onToggleSource()
-    // eslint-disable-next-line @typescript-eslint/promise-function-async
-    return getOtherSource(musicInfo).then(otherSource => {
-      // console.log('find otherSource', otherSource.length)
-      if (otherSource.length) {
-        return getOnlineOtherSourceMusicUrl({
-          musicInfos: [...otherSource],
-          onToggleSource,
-          quality,
-          isRefresh,
-          retryedSource: [musicInfo.source],
-        })
+
+    switch (fallbackMode) {
+      case 'strict': {
+        // 仅尝试所选音质：换其他源同音质，失败则报错
+        onToggleSource()
+        const otherSource = await getOtherSource(musicInfo)
+        if (otherSource.length) {
+          return getOnlineOtherSourceMusicUrl({
+            musicInfos: [...otherSource], onToggleSource, quality: targetQuality,
+            isRefresh, retryedSource: [musicInfo.source],
+          })
+        }
+        throw err
       }
-      throw err
-    })
+
+      case 'downgrade': {
+        // 直接降级到下一音质
+        const nextQuality = getNextLowerQuality(targetQuality)
+        if (nextQuality) {
+          console.log('[quality] downgrade', targetQuality, '->', nextQuality)
+          return handleGetOnlineMusicUrl({ musicInfo, quality: nextQuality, isRefresh, allowToggleSource, onToggleSource })
+        }
+        throw err
+      }
+
+      case 'same_source_higher': {
+        // 步骤1：同音源尝试更高音质
+        const higherQualities = getQualitiesAtOrAbove(musicInfo, targetQuality)
+        for (const q of higherQualities) {
+          if (q === targetQuality) continue
+          try {
+            return await tryQuality(q)
+          } catch (e: any) {
+            if (e.message === requestMsg.tooManyRequests) throw e
+            console.log('[quality] same_source_higher:', q, 'failed')
+          }
+        }
+
+        // 步骤2：换其他源尝试同音质
+        onToggleSource()
+        const otherSource = await getOtherSource(musicInfo)
+        if (otherSource.length) {
+          try {
+            return await getOnlineOtherSourceMusicUrl({
+              musicInfos: [...otherSource], onToggleSource, quality: targetQuality,
+              isRefresh, retryedSource: [musicInfo.source],
+            })
+          } catch (e: any) {
+            console.log('[quality] same_source_higher: other sources failed')
+          }
+        }
+
+        // 步骤3：策略失败 → 降级或跳过
+        if (allowDowngrade) {
+          const dg = tryDowngrade()
+          if (dg) return dg
+        }
+        skipSong()
+      }
+
+      case 'all_sources_higher': {
+        // 步骤1：尝试其他源的同音质
+        onToggleSource()
+        const otherSource = await getOtherSource(musicInfo)
+        if (otherSource.length) {
+          try {
+            return await getOnlineOtherSourceMusicUrl({
+              musicInfos: [...otherSource], onToggleSource, quality: targetQuality,
+              isRefresh, retryedSource: [musicInfo.source],
+            })
+          } catch (e: any) {
+            console.log('[quality] all_sources_higher: same quality failed on all sources')
+          }
+        }
+
+        // 步骤2：尝试所有源的更高音质（在当前源尝试即可，因为其他源已试过同音质）
+        const higherQualities = getQualitiesAtOrAbove(musicInfo, targetQuality)
+        for (const q of higherQualities) {
+          if (q === targetQuality) continue
+          try {
+            return await tryQuality(q)
+          } catch (e: any) {
+            if (e.message === requestMsg.tooManyRequests) throw e
+            console.log('[quality] all_sources_higher:', q, 'failed')
+          }
+        }
+
+        // 步骤3：策略失败 → 降级或跳过
+        if (allowDowngrade) {
+          const dg = tryDowngrade()
+          if (dg) return dg
+        }
+        skipSong()
+      }
+
+      case 'best': {
+        // 步骤1：尝试所有源的同音质
+        onToggleSource()
+        const otherSource = await getOtherSource(musicInfo)
+        if (otherSource.length) {
+          try {
+            return await getOnlineOtherSourceMusicUrl({
+              musicInfos: [...otherSource], onToggleSource, quality: targetQuality,
+              isRefresh, retryedSource: [musicInfo.source],
+            })
+          } catch (e: any) {
+            console.log('[quality] best: same quality failed on all sources')
+          }
+        }
+
+        // 步骤2：全部源失败后降级
+        const nextQuality = getNextLowerQuality(targetQuality)
+        if (nextQuality) {
+          console.log('[quality] best-mode downgrade', targetQuality, '->', nextQuality)
+          return handleGetOnlineMusicUrl({ musicInfo, quality: nextQuality, isRefresh, allowToggleSource, onToggleSource })
+        }
+        throw err
+      }
+
+      default: {
+        // 未知模式，按 best 处理
+        throw err
+      }
+    }
   })
 }
 
