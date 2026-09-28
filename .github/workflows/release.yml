@@ -22,9 +22,24 @@ jobs:
         shell: bash
         run: |
           cd android
-          echo ${{ secrets.KEYSTORE_STORE_FILE_BASE64 }} | base64 --decode > app/${{ secrets.KEYSTORE_STORE_FILE }}
-          ./gradlew assembleRelease -PMYAPP_UPLOAD_STORE_FILE='${{ secrets.KEYSTORE_STORE_FILE }}' -PMYAPP_UPLOAD_KEY_ALIAS='${{ secrets.KEYSTORE_KEY_ALIAS }}' -PMYAPP_UPLOAD_STORE_PASSWORD='${{ secrets.KEYSTORE_PASSWORD }}' -PMYAPP_UPLOAD_KEY_PASSWORD='${{ secrets.KEYSTORE_KEY_PASSWORD }}'
-          rm -f app/${{ secrets.KEYSTORE_STORE_FILE }}
+          if [ -n "${{ secrets.KEYSTORE_STORE_FILE_BASE64 }}" ]; then
+            # 仓库配置了签名密钥（上游官方构建路径）
+            echo "${{ secrets.KEYSTORE_STORE_FILE_BASE64 }}" | base64 --decode > "app/${{ secrets.KEYSTORE_STORE_FILE }}"
+            STORE_FILE='${{ secrets.KEYSTORE_STORE_FILE }}'
+            KEY_ALIAS='${{ secrets.KEYSTORE_KEY_ALIAS }}'
+            STORE_PASSWORD='${{ secrets.KEYSTORE_PASSWORD }}'
+            KEY_PASSWORD='${{ secrets.KEYSTORE_KEY_PASSWORD }}'
+          else
+            # 仓库无签名密钥（如 fork）：使用仓库内已提交的 debug.keystore 签名。
+            # 签名确定，后续版本可直接覆盖安装，无需卸载旧版本。
+            echo "No KEYSTORE_* secrets found, signing with the repo's debug.keystore..."
+            STORE_FILE='debug.keystore'
+            KEY_ALIAS='androiddebugkey'
+            STORE_PASSWORD='android'
+            KEY_PASSWORD='android'
+          fi
+          ./gradlew assembleRelease -PMYAPP_UPLOAD_STORE_FILE="$STORE_FILE" -PMYAPP_UPLOAD_KEY_ALIAS="$KEY_ALIAS" -PMYAPP_UPLOAD_STORE_PASSWORD="$STORE_PASSWORD" -PMYAPP_UPLOAD_KEY_PASSWORD="$KEY_PASSWORD"
+          rm -f "app/$STORE_FILE"
 
       # Push tag to GitHub if package.json version's tag is not tagged
       - name: Get package version
