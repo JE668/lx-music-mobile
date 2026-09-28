@@ -32,9 +32,12 @@ const QualityBadge = () => {
 
   if (!showBadge || !quality) return null
 
+  // 注意：文字必须用 c-button-font，背景用 c-primary。
+  // 早期版本曾用 theme['c-content-background'] 作文字色，
+  // 但 PlayerBar 自身的背景就是 c-content-background，徽章文字会完全看不见。
   return (
-    <View style={styles.badge}>
-      <Text size={9} color={theme['c-content-background']} numberOfLines={1}>
+    <View style={{ ...styles.badge, backgroundColor: theme['c-primary'] }}>
+      <Text size={10} color={theme['c-button-font']} numberOfLines={1}>
         {QUALITY_SHORT[quality] ?? quality}
       </Text>
     </View>
@@ -96,9 +99,8 @@ const styles = createStyle({
   badge: {
     flexGrow: 0,
     flexShrink: 0,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 4,
-    paddingVertical: 1,
-    paddingHorizontal: 4,
+    borderRadius: 8,
+    paddingVertical: 2,
+    paddingHorizontal: 5,
   },
 })

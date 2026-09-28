@@ -19,6 +19,32 @@ import {
 } from './local'
 
 
+const EXT_QUALITY: Record<string, LX.Quality> = {
+  '.flac': 'flac',
+  '.ape': 'ape',
+  '.wav': 'wav',
+}
+
+/**
+ * 本地/下载歌曲不经过 online.ts，不会自然发出 currentPlayQualityChanged，
+ * 播放条上的音质徽章因此永远为空。这里按播放地址的文件扩展名补发一次，
+ * 让本地无损文件（FLAC/APE/WAV）也能显示音质。
+ *
+ * 在线歌曲的真实音质已由 online.ts 精确设置（带查询串、无可靠扩展名），
+ * 故此时直接沿用，不覆盖。无法从扩展名判断音质的有损格式一律发 null 清空，
+ * 避免沿用上上一首歌的音质。
+ */
+export const emitPlayQualityFromUrl = (url: string) => {
+  if (global.lx.currentPlayQuality) return
+
+  const path = url.split(/[?#]/)[0]
+  const dot = path.lastIndexOf('.')
+  const quality = (dot > 0 ? EXT_QUALITY[path.substring(dot).toLowerCase()] : undefined) ?? null
+
+  global.lx.currentPlayQuality = quality
+  global.state_event.currentPlayQualityChanged(quality)
+}
+
 export const getMusicUrl = async({
   musicInfo,
   quality,

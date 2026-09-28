@@ -19,7 +19,7 @@ import {
   clearTempPlayeList,
   removeTempPlayList,
 } from '@/core/player/tempPlayList'
-import { getMusicUrl, getPicPath, getLyricInfo } from '@/core/music'
+import { getMusicUrl, getPicPath, getLyricInfo, emitPlayQualityFromUrl } from '@/core/music'
 import { requestMsg } from '@/utils/message'
 import { getRandom } from '@/utils/common'
 import { filterList } from './utils'
@@ -98,6 +98,11 @@ const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListIt
   setStatusText(global.i18n.t('player__getting_url'))
   addLoadTimeout()
 
+  // 开始为新歌曲取播放地址：先清空上一首歌的音质，否则播放条徽章会沿用上次的值。
+  // 这里只影响真实播放，preloadNextMusic 走的是 @/core/music 的 getMusicUrl，不受影响。
+  global.lx.currentPlayQuality = null
+  global.state_event.currentPlayQualityChanged(null)
+
   // const type = getPlayType(settingState.setting['player.isPlayHighQuality'], musicInfo)
   let toggleMusicInfo = ('progress' in musicInfo ? musicInfo.metadata.musicInfo : musicInfo).meta.toggleMusicInfo
 
@@ -142,6 +147,8 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   global.lx.gettingUrlId = createGettingUrlId(musicInfo)
   void getMusicPlayUrl(musicInfo, isRefresh).then((url) => {
     if (!url) return
+    // 在线歌曲的音质已由 online.ts 设置；本地/下载歌曲在这里按扩展名补齐
+    emitPlayQualityFromUrl(url)
     setResource(musicInfo, url, playerState.progress.nowPlayTime)
   }).catch((err: any) => {
     console.log(err)
