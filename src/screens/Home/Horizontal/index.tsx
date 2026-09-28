@@ -1,6 +1,7 @@
 import { View } from 'react-native'
 import Aside from './Aside'
 import PlayerBar from '@/components/player/PlayerBar'
+import CarFocusPlay from '@/components/player/CarFocusPlay'
 import StatusBar from '@/components/common/StatusBar'
 import Header from './Header'
 import Main from './Main'
@@ -29,6 +30,7 @@ export default () => {
           <PlayerBar isHome />
         </View>
       </View>
+      <CarFocusPlay />
     </>
   )
 }

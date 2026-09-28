@@ -323,6 +323,7 @@ export default () => {
         onScrollEndDrag={onScrollEndDrag}
         fadingEdgeLength={100}
         initialNumToRender={Math.max(line + 10, 10)}
+        maxToRenderPerBatch={4}
         onScrollToIndexFailed={handleScrollToIndexFailed}
         onScroll={handleScroll}
       />

@@ -159,6 +159,16 @@ declare global {
       'common.carMode': boolean
 
       /**
+       * 驾驶安全模式（全屏专注播放界面：超大按钮、隐藏列表、单手可达）
+       */
+      'common.carSafetyMode': boolean
+
+      /**
+       * 播放时保持屏幕常亮
+       */
+      'common.keepScreenOn': boolean
+
+      /**
        * 启动软件时是否恢复上次播放进度
        */
       'player.isSavePlayTime': boolean

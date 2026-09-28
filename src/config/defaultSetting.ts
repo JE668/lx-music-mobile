@@ -15,6 +15,8 @@ const defaultSetting: LX.AppSetting = {
   'common.useSystemFileSelector': true,
   'common.alwaysKeepStatusbarHeight': false,
   'common.carMode': false,
+  'common.carSafetyMode': false,
+  'common.keepScreenOn': false,
 
   'player.startupAutoPlay': false,
   'player.startupPushPlayDetailScreen': false,

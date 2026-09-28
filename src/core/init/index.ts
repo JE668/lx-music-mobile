@@ -14,6 +14,7 @@ import settingState from '@/store/setting/state'
 import { checkUpdate } from '@/core/version'
 import { bootLog } from '@/utils/bootLog'
 import { cheatTip } from '@/utils/tools'
+import { syncWakeLock } from '@/utils/keepAwake'
 
 let isFirstPush = true
 const handlePushedHomeScreen = async() => {
@@ -40,13 +41,16 @@ export default async() => {
   bootLog('Setting inited.')
   // console.log(setting)
 
-  await initTheme(setting)
-  bootLog('Theme inited.')
+  // 阶段一：i18n 先行（后续模块的弹窗/日志文案依赖 global.i18n）
   await initI18n(setting)
   bootLog('I18n inited.')
 
-  await initUserApi(setting)
-  bootLog('User Api inited.')
+  // 阶段二：主题与用户 API 互不依赖，并行初始化（原先串行，各含一次异步存储读取）
+  await Promise.all([
+    initTheme(setting),
+    initUserApi(setting),
+  ])
+  bootLog('Theme & User Api inited.')
 
   setApiSource(setting['common.apiSource'])
   bootLog('Api inited.')
@@ -55,10 +59,16 @@ export default async() => {
   bootLog('Playback Service Registered.')
   await initPlayer(setting)
   bootLog('Player inited.')
-  await dataInit(setting)
-  bootLog('Data inited.')
-  await initCommonState(setting)
-  bootLog('Common State inited.')
+
+  // 恢复「播放时保持屏幕常亮」状态（冷启动后需重新申请窗口 flag）
+  syncWakeLock()
+
+  // 阶段三：数据层与全局状态互不依赖，并行初始化
+  await Promise.all([
+    dataInit(setting),
+    initCommonState(setting),
+  ])
+  bootLog('Data & Common State inited.')
 
   void initSync(setting)
   bootLog('Sync inited.')
