@@ -5,6 +5,11 @@ on:
     branches:
       - master
 
+# 显式声明权限：默认的只读 GITHUB_TOKEN 无法创建 tag / release
+# （pkgdeps/git-tag-action 会静默退出 0 而不真正建 tag，softprops 直接 403）
+permissions:
+  contents: write
+
 jobs:
   Android:
     name: Android
